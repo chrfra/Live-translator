@@ -124,12 +124,8 @@
     const LOCAL_TRANSLATE_URL = location.origin;
 
     async function translateViaLocal(text){
-      const endpoint = `${LOCAL_TRANSLATE_URL}/translate`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ q: text, source: "sv", target: "en" })
-      });
+      const endpoint = `${LOCAL_TRANSLATE_URL}/translate?q=${encodeURIComponent(text)}&source=sv&target=en`;
+      const res = await fetch(endpoint, { method: "GET" });
       if(!res.ok) throw new Error(`Local HTTP ${res.status}`);
       const data = await res.json();
       if(!data?.translatedText) throw new Error("Local missing translatedText");

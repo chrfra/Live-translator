@@ -22,6 +22,20 @@ COPY . .
 # Ensure writable data dirs for Argos Translate
 RUN mkdir -p /app/.local/share && chmod -R 777 /app/.local || true
 
+# Pre-install Argos sv->en model during build to avoid runtime downloads
+RUN python - <<'PY'
+import sys
+try:
+    from argostranslate import package
+    pkgs = package.get_available_packages()
+    target = next(p for p in pkgs if p.from_code == 'sv' and p.to_code == 'en')
+    path = target.download()
+    package.install_from_path(path)
+    print('Installed Argos package:', target)
+except Exception as e:
+    print('Argos preinstall warning:', e, file=sys.stderr)
+PY
+
 # Use PORT provided by platform; default 8080
 ENV PORT=8080
 EXPOSE 8080
