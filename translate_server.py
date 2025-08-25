@@ -34,7 +34,7 @@ def version():
     # Get Stockholm time
     try:
         import datetime
-        stockholm_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2)).replace(tzinfo=datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S CET")
+        stockholm_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2))).strftime("%Y-%m-%d %H:%M:%S CET")
     except:
         stockholm_time = "unknown"
     
