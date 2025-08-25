@@ -31,11 +31,18 @@ def health():
 
 @app.route("/version")
 def version():
-    ts = os.environ.get("DEPLOY_TS", "unknown")
+    # Get Stockholm time
+    try:
+        import datetime
+        stockholm_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2)).replace(tzinfo=datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S CET")
+    except:
+        stockholm_time = "unknown"
+    
+    ts = os.environ.get("DEPLOY_TS", stockholm_time)
     return {
-        "version": os.environ.get("GIT_TAG", "v2"),
+        "version": os.environ.get("GIT_TAG", "v2.3"),
         "deployed_at": ts,
-        "build": os.environ.get("BUILD_NUM", os.environ.get("GIT_SHA", "dev"))
+        "build": os.environ.get("BUILD_NUM", os.environ.get("GIT_TAG", "v2.3"))
     }
 
 @app.route("/")

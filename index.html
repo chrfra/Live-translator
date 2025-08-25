@@ -22,16 +22,16 @@
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .wordgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .wordgrid .head{font-weight:700;color:var(--muted);margin-bottom:6px}
-    .col{background:#0e1430;border:1px solid #24305a;border-radius:8px;padding:8px;min-height:120px;position:relative;height:40vh;overflow:auto}
+    .col{background:#0e1430;border:1px solid #24305a;border-radius:8px;padding:8px;min-height:120px;position:relative;height:25vh;overflow:auto}
     .col.sv .cell{ text-align:right }
     .divider{ position:absolute; top:0; bottom:0; width:1px; background:#2a3566; left:calc(100% + 4px) }
     .cell{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace; line-height:1.6; border-right:1px solid #2a3566 }
     .cell.en{ border-left:1px solid #2a3566; border-right:0 }
     .wrap{height:100vh;display:flex;flex-direction:column}
     .fill{flex:1;min-height:0}
-    .grid.fill{flex:1;min-height:0}
+    .grid.fill{flex:1;min-height:0;min-height:300px}
     .grid.fill > .card{display:flex;flex-direction:column;min-height:0}
-    .grid.fill > .card textarea{flex:1;min-height:0;resize:none}
+    .grid.fill > .card textarea{flex:1;min-height:200px;resize:none}
     #langInfo select{background:var(--accent);color:#041028;border:0;border-radius:999px;padding:6px 10px;font-weight:700;appearance:none;margin:0 6px}
     .foot{opacity:.7;font-size:12px;margin-top:10px}
     .small{font-size:12px;color:var(--muted)}
