@@ -3,13 +3,11 @@ from flask_cors import CORS
 import os
 import argostranslate.package
 import argostranslate.translate
-import os
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Make sure Argos uses writable data dir in containerized envs
 os.environ.setdefault("HOME", BASE_DIR)
 os.environ.setdefault("XDG_DATA_HOME", os.path.join(BASE_DIR, ".local", "share"))
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=BASE_DIR, static_url_path="")
 CORS(app)
 
