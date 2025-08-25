@@ -28,8 +28,10 @@
     .cell{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace; line-height:1.6; border-right:1px solid #2a3566 }
     .cell.en{ border-left:1px solid #2a3566; border-right:0 }
     .wrap{height:100vh;display:flex;flex-direction:column}
-    .fill{flex:1;overflow:auto}
-    #swedishOut,#englishOut{max-height:30vh;overflow:auto}
+    .fill{flex:1;min-height:0}
+    .grid.fill{flex:1;min-height:0}
+    .grid.fill > .card{display:flex;flex-direction:column;min-height:0}
+    .grid.fill > .card textarea{flex:1;min-height:0;resize:none}
     #langInfo select{background:var(--accent);color:#041028;border:0;border-radius:999px;padding:6px 10px;font-weight:700;appearance:none;margin:0 6px}
     .foot{opacity:.7;font-size:12px;margin-top:10px}
     .small{font-size:12px;color:var(--muted)}
