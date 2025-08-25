@@ -107,7 +107,7 @@
         const res = await fetch("/version");
         if(res.ok){
           const j = await res.json();
-          document.getElementById("buildInfo").textContent = `${j.version} @ ${j.deployed_at}`;
+          document.getElementById("buildInfo").textContent = `${j.version} (${j.build}) @ ${j.deployed_at}`;
         }
       }catch(_){ /* ignore */ }
     }
@@ -409,7 +409,17 @@
         }
 
         // 3) Render English area: history + at most one interim line (one token per word)
-        const interimLine = interimEnglishTokens.join(" ");
+        // Prefer final-quality translation even during speech by translating the entire utterance seen so far,
+        // limited to last 200 chars to keep latency down. Fall back to interim tokens if call fails.
+        let interimLine = interimEnglishTokens.join(" ");
+        try{
+          const fullSoFar = (lastFinal + (interim ? (" " + interim) : "")).trim();
+          if(fullSoFar){
+            const limited = fullSoFar.length > 200 ? fullSoFar.slice(-200) : fullSoFar;
+            const { text: better } = await translateToEnglish(limited);
+            interimLine = better;
+          }
+        }catch(_){ /* keep token line */ }
         englishOut.value = englishHistoryText + (interimLine ? (englishHistoryText ? "\n" : "") + `[interim] ${interimLine}` : "");
 
         // 4) Per-word streaming queue from final + current complete interim
