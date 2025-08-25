@@ -27,7 +27,17 @@ docker run -p 8080:8080 -e PORT=8080 live-translator
 ```
 
 Option B: Render, Fly.io, Railway, Heroku
-- Use the Dockerfile or set `PORT` and run `python translate_server.py` as the start command.
+- Render: click this and follow the prompts (connect your repo):
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+- Or on any platform, use the Dockerfile or set `PORT` and run `python translate_server.py`.
+
+Option C: Instant local tunnel (temporary public URL)
+
+```
+npx localtunnel --port 5009
+```
 
 ## Project files
 
