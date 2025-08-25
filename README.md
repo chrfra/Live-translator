@@ -1,3 +1,13 @@
+---
+title: Live Translator
+emoji: "🌐"
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 8080
+---
+
 # Swedish Live Transcribe + Translate
 
 A minimal local web app that listens to mic, transcribes Swedish, and translates to English.
