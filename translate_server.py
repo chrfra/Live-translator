@@ -23,22 +23,33 @@ def ensure_model():
     from argostranslate import translate as _tr
     _argos_package = _pkg
     _argos_translate = _tr
-    # Swedish (sv) to English (en)
-    from_code, to_code = "sv", "en"
-    installed = _argos_package.get_installed_packages()
-    if not any(p.from_code == from_code and p.to_code == to_code for p in installed):
-        # Download and install package
-        available = _argos_package.get_available_packages()
-        pkg = next((p for p in available if p.from_code == from_code and p.to_code == to_code), None)
-        if not pkg:
-            raise RuntimeError("No Argos package sv->en available")
-        download_path = pkg.download()
-        _argos_package.install_from_path(download_path)
+    # Ensure multiple directions are present if available
+    def ensure_pair(fc, tc):
+        installed = _argos_package.get_installed_packages()
+        if any(p.from_code == fc and p.to_code == tc for p in installed):
+            return
+        try:
+            available = _argos_package.get_available_packages()
+            pkg = next((p for p in available if p.from_code == fc and p.to_code == tc), None)
+            if pkg:
+                path = pkg.download()
+                _argos_package.install_from_path(path)
+        except Exception as e:
+            # Log only; we may pivot
+            print("Argos ensure_pair warning:", fc, tc, e)
+
+    for fc, tc in [("sv","en"),("en","sv"),("zh","en"),("en","zh"),("zh","sv"),("sv","zh")]:
+        ensure_pair(fc, tc)
     _initialized = True
 
 @app.route("/health")
 def health():
     return {"ok": True}
+
+@app.route("/version")
+def version():
+    ts = os.environ.get("DEPLOY_TS", "unknown")
+    return {"version": os.environ.get("GIT_TAG", "v2"), "deployed_at": ts}
 
 @app.route("/")
 def index():
@@ -70,7 +81,18 @@ def translate():
         target = (data.get("target") or "en").strip()
     if not text:
         return jsonify({"translatedText": ""})
-    translated = _argos_translate.translate(text, source, target)
+    def translate_once(src, tgt, txt):
+        return _argos_translate.translate(txt, src, tgt)
+
+    try:
+        translated = translate_once(source, target, text)
+    except Exception:
+        # Try pivot via English if direct pair unavailable
+        if source != "en" and target != "en":
+            mid = translate_once(source, "en", text)
+            translated = translate_once("en", target, mid)
+        else:
+            raise
     return jsonify({"translatedText": translated})
 
 if __name__ == "__main__":

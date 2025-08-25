@@ -22,7 +22,9 @@
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .wordgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .wordgrid .head{font-weight:700;color:var(--muted);margin-bottom:6px}
-    .col{background:#0e1430;border:1px solid #24305a;border-radius:8px;padding:8px;min-height:120px}
+    .col{background:#0e1430;border:1px solid #24305a;border-radius:8px;padding:8px;min-height:120px;position:relative}
+    .col.sv .cell{ text-align:right }
+    .divider{ position:absolute; top:0; bottom:0; width:1px; background:#2a3566; left:calc(100% + 4px) }
     .cell{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace; line-height:1.6}
     .foot{opacity:.7;font-size:12px;margin-top:10px}
     .small{font-size:12px;color:var(--muted)}
@@ -38,9 +40,9 @@
         <button id="stopBtn" disabled>Stop</button>
         <button id="clearBtn">Clear</button>
         <span class="pill"><span class="status" id="status">Idle</span></span>
-        <span class="pill small" id="modelInfo">Model: Web Speech API (sv-SE) · Translation: Local (Argos) → LibreTranslate → MyMemory</span>
+        <span class="pill small" id="langInfo"><select id="fromLang"><option value="sv">Swedish</option><option value="en">English</option><option value="zh">Chinese</option></select> → <select id="toLang"><option value="en">English</option><option value="sv">Swedish</option><option value="zh">Chinese</option></select></span>
       </div>
-      <div class="small">Grant mic permission when prompted. Transcription language: Swedish (sv-SE). Translation: English.</div>
+      <div class="small">Grant mic permission when prompted. Choose languages above.</div>
     </div>
 
     <div class="grid">
@@ -59,7 +61,7 @@
       <div class="wordgrid">
         <div>
           <div class="head">Swedish</div>
-          <div id="wordColSv" class="col"></div>
+          <div id="wordColSv" class="col sv"><span class="divider"></span></div>
         </div>
         <div>
           <div class="head">English</div>
@@ -71,6 +73,7 @@
 
     <details class="card" id="debugWrap">
       <summary>Debug</summary>
+      <div class="small">Build info: <span id="buildInfo">loading…</span></div>
       <pre id="debug" class="mono" style="white-space:pre-wrap"></pre>
     </details>
 
@@ -85,10 +88,22 @@
     const clearBtn = document.getElementById("clearBtn");
     const wordColSv = document.getElementById("wordColSv");
     const wordColEn = document.getElementById("wordColEn");
+    const fromLangSel = document.getElementById("fromLang");
+    const toLangSel = document.getElementById("toLang");
     const debugEl = document.getElementById("debug");
 
     let recognition;
     let isRunning = false;
+
+    async function fetchBuildInfo(){
+      try{
+        const res = await fetch("/version");
+        if(res.ok){
+          const j = await res.json();
+          document.getElementById("buildInfo").textContent = `${j.version} @ ${j.deployed_at}`;
+        }
+      }catch(_){ /* ignore */ }
+    }
 
     function log(msg){
       debugEl.textContent += `\n${new Date().toLocaleTimeString()} — ${msg}`
@@ -123,8 +138,15 @@
     // Point to same origin by default; works locally and when deployed
     const LOCAL_TRANSLATE_URL = location.origin;
 
+    function getLangs(){
+      const src = fromLangSel.value;
+      const tgt = toLangSel.value;
+      return { src, tgt };
+    }
+
     async function translateViaLocal(text){
-      const endpoint = `${LOCAL_TRANSLATE_URL}/translate?q=${encodeURIComponent(text)}&source=sv&target=en`;
+      const { src, tgt } = getLangs();
+      const endpoint = `${LOCAL_TRANSLATE_URL}/translate?q=${encodeURIComponent(text)}&source=${encodeURIComponent(src)}&target=${encodeURIComponent(tgt)}`;
       const res = await fetch(endpoint, { method: "GET" });
       if(!res.ok) throw new Error(`Local HTTP ${res.status}`);
       const data = await res.json();
@@ -388,6 +410,7 @@
       };
     }
 
+    fetchBuildInfo();
     startBtn.addEventListener("click", () => {
       if(!supportsWebSpeech()){
         alert("Web Speech API not supported in this browser. Try Chrome or Safari.");
