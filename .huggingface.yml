@@ -1,0 +1,6 @@
+sdk: docker
+app_port: 8080
+env:
+  - key: PORT
+    value: 8080
+

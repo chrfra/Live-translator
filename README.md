@@ -39,6 +39,22 @@ Option C: Instant local tunnel (temporary public URL)
 npx localtunnel --port 5009
 ```
 
+Option D: Hugging Face Spaces (Docker)
+
+1) Create a new Space at `https://huggingface.co/new-space` with:
+   - SDK: Docker
+   - Space name: e.g., `live-translator`
+   - Visibility: your choice
+
+2) Push this repo to the Space:
+
+```
+git remote add hf https://huggingface.co/spaces/<your-username>/live-translator
+git push hf main
+```
+
+The Space will build using the Dockerfile and expose a public URL.
+
 ## Project files
 
 - index.html
