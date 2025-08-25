@@ -16,10 +16,11 @@ A minimal local web app that listens to mic, transcribes Swedish, and translates
 
 1) Start the combined server (serves UI and /translate):
    source .venv/bin/activate
-   python translate_server.py
+   DEV=1 python translate_server.py
 
 2) Open app:
    open http://localhost:5009
+   # Code changes will auto-reload when DEV=1
 
 ## Dev
 
