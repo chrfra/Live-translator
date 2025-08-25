@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Swedish Live Transcribe + Translate</title>
+  <style>
+    :root{--bg:#0b1020;--fg:#e9eefb;--muted:#a9b1c6;--accent:#5da8ff;--card:#121733;--ok:#39d353;--warn:#ffcc00;--err:#ff6b6b}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji}
+    .wrap{max-width:900px;margin:0 auto;padding:24px}
+    h1{font-size:22px;margin:0 0 12px}
+    .card{background:var(--card);border:1px solid #24305a;border-radius:12px;padding:16px;margin:12px 0}
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    button{border:0;border-radius:10px;padding:10px 14px;background:var(--accent);color:#041028;font-weight:700;cursor:pointer}
+    button[disabled]{opacity:.5;cursor:not-allowed}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid #2a3566;background:#12193a;color:var(--muted);font-size:13px}
+    .status{font-weight:700}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace}
+    textarea{width:100%;min-height:120px;background:#0e1430;color:var(--fg);border:1px solid #24305a;border-radius:10px;padding:10px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .foot{opacity:.7;font-size:12px;margin-top:10px}
+    .small{font-size:12px;color:var(--muted)}
+    .live{color:var(--ok)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Swedish Live Transcribe + Translate</h1>
+    <div class="card">
+      <div class="row">
+        <button id="startBtn">Start</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="clearBtn">Clear</button>
+        <span class="pill"><span class="status" id="status">Idle</span></span>
+        <span class="pill small" id="modelInfo">Model: Web Speech API (sv-SE) · Translation: Local (Argos) → LibreTranslate → MyMemory</span>
+      </div>
+      <div class="small">Grant mic permission when prompted. Transcription language: Swedish (sv-SE). Translation: English.</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Original (Swedish)</h3>
+        <textarea id="swedishOut" class="mono" placeholder="Swedish transcript will appear here" readonly></textarea>
+      </div>
+      <div class="card">
+        <h3>English Translation</h3>
+        <textarea id="englishOut" class="mono" placeholder="English translation will appear here" readonly></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Per‑word Translation (live)</h3>
+      <div id="wordStream" class="mono" style="max-height:180px; overflow:auto; white-space:pre-wrap"></div>
+      <div class="small">Each new Swedish word is translated and appended here.</div>
+    </div>
+
+    <div class="card">
+      <h3>Debug</h3>
+      <pre id="debug" class="mono" style="white-space:pre-wrap"></pre>
+    </div>
+
+    <div class="foot">If your browser lacks the Web Speech API, use Chrome on macOS/Windows. Safari 16+ also supports it.</div>
+  </div>
+  <script>
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusEl = document.getElementById("status");
+    const swedishOut = document.getElementById("swedishOut");
+    const englishOut = document.getElementById("englishOut");
+    const clearBtn = document.getElementById("clearBtn");
+    const wordStreamEl = document.getElementById("wordStream");
+    const debugEl = document.getElementById("debug");
+
+    let recognition;
+    let isRunning = false;
+
+    function log(msg){
+      debugEl.textContent += `\n${new Date().toLocaleTimeString()} — ${msg}`
+    }
+
+    function supportsWebSpeech(){
+      return "webkitSpeechRecognition" in window || "SpeechRecognition" in window;
+    }
+
+    // Simple in-memory cache with basic LRU behavior
+    const translationCache = new Map();
+    const MAX_CACHE_ENTRIES = 200;
+
+    function cacheGet(key){
+      if(!translationCache.has(key)) return undefined;
+      const val = translationCache.get(key);
+      // refresh recency
+      translationCache.delete(key);
+      translationCache.set(key, val);
+      return val;
+    }
+
+    function cacheSet(key, value){
+      if(translationCache.has(key)) translationCache.delete(key);
+      translationCache.set(key, value);
+      if(translationCache.size > MAX_CACHE_ENTRIES){
+        const firstKey = translationCache.keys().next().value;
+        translationCache.delete(firstKey);
+      }
+    }
+
+    const LOCAL_TRANSLATE_URL = "http://127.0.0.1:5009";
+
+    async function translateViaLocal(text){
+      const endpoint = `${LOCAL_TRANSLATE_URL}/translate`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: text, source: "sv", target: "en" })
+      });
+      if(!res.ok) throw new Error(`Local HTTP ${res.status}`);
+      const data = await res.json();
+      if(!data?.translatedText) throw new Error("Local missing translatedText");
+      return { text: data.translatedText, provider: "Local (Argos)" };
+    }
+
+    async function translateViaLibre(text){
+      // Public instance; subject to rate limits/CORS. For production, deploy your own.
+      const endpoint = "https://libretranslate.com/translate";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: text, source: "sv", target: "en", format: "text" })
+      });
+      if(!res.ok) throw new Error(`LibreTranslate HTTP ${res.status}`);
+      const data = await res.json();
+      if(!data?.translatedText) throw new Error("LibreTranslate missing translatedText");
+      return { text: data.translatedText, provider: "LibreTranslate" };
+    }
+
+    async function translateViaMyMemory(text){
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=sv|en`;
+      const res = await fetch(url);
+      if(!res.ok) throw new Error(`MyMemory HTTP ${res.status}`);
+      const data = await res.json();
+      const translated = data?.responseData?.translatedText || "";
+      const warning = data?.responseDetails || "";
+      if((warning && warning.toString().toUpperCase().includes("WARNING")) || translated.toUpperCase().includes("MYMEMORY WARNING")){
+        throw new Error("MyMemory quota or warning");
+      }
+      return { text: translated, provider: "MyMemory" };
+    }
+
+    async function translateToEnglish(text){
+      const key = text;
+      const cached = cacheGet(key);
+      if(cached) return cached;
+      // Try Local first, then LibreTranslate, then MyMemory
+      try{
+        const r0 = await translateViaLocal(text);
+        cacheSet(key, r0);
+        return r0;
+      }catch(e0){
+        log("Local translator failed: "+ e0.message);
+      }
+      try{
+        const r1 = await translateViaLibre(text);
+        cacheSet(key, r1);
+        return r1;
+      }catch(e1){
+        log("LibreTranslate failed: "+ e1.message);
+        try{
+          const r2 = await translateViaMyMemory(text);
+          cacheSet(key, r2);
+          return r2;
+        }catch(e2){
+          log("MyMemory failed: "+ e2.message);
+          throw new Error("All translators failed");
+        }
+      }
+    }
+
+    function setupRecognition(){
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.lang = "sv-SE";
+      recognition.interimResults = true;
+      recognition.continuous = true;
+
+      recognition.onstart = () => {
+        isRunning = true;
+        statusEl.textContent = "Listening";
+        statusEl.classList.add("live");
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        log("Recognition started");
+      };
+
+      recognition.onend = () => {
+        isRunning = false;
+        statusEl.textContent = "Stopped";
+        statusEl.classList.remove("live");
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        log("Recognition ended");
+      };
+
+      recognition.onerror = (e) => {
+        log("Recognition error: "+ (e.error || "unknown"));
+      };
+
+      let lastFinal = "";
+      let translateTimer = null;
+      let lastTranslateInput = "";
+
+      let lastRequestId = 0;
+      let englishHistoryText = "";           // committed English from final results
+      let interimEnglishAccum = "";          // incremental English for interim deltas only
+      let prevInterimWords = [];              // previously translated interim Swedish tokens
+      let committedFinalWordsCount = 0;       // how many Swedish tokens are finalized
+      let processedWordCount = 0;             // for per-word streaming
+      const wordQueue = [];
+      let processingWord = false;
+      let lastStreamedWord = "";
+
+      function appendWordLine(svWord, enWord){
+        const line = document.createElement("div");
+        line.textContent = `${svWord} → ${enWord}`;
+        wordStreamEl.appendChild(line);
+        lastStreamedWord = svWord;
+        while(wordStreamEl.childNodes.length > 200){
+          wordStreamEl.removeChild(wordStreamEl.firstChild);
+        }
+        wordStreamEl.scrollTop = wordStreamEl.scrollHeight;
+      }
+
+      async function processNextWord(){
+        if(processingWord || wordQueue.length === 0) return;
+        processingWord = true;
+        const svWord = wordQueue.shift();
+        try{
+          const { text: enWord } = await translateToEnglish(svWord);
+          appendWordLine(svWord, enWord);
+        }catch(e){
+          appendWordLine(svWord, "(translate error)");
+          log("Word translate error: "+ e.message);
+        } finally {
+          processingWord = false;
+          processNextWord();
+        }
+      }
+
+      function enqueueNewWordsFrom(text, isInterim){
+        let words = (text.match(/\p{L}+/gu) || []);
+        // If this is interim and the last character is a letter, the last token is incomplete → drop it
+        if(isInterim && /\p{L}$/u.test(text) && words.length > 0){
+          words = words.slice(0, words.length - 1);
+        }
+        // If the stream shrank (e.g., interim cleared), clamp processed count
+        if(processedWordCount > words.length){
+          processedWordCount = words.length;
+        }
+        if(words.length <= processedWordCount) return;
+        for(let i = processedWordCount; i < words.length; i++){
+          const w = words[i];
+          if(!w) continue;
+          if(w === lastStreamedWord) continue; // skip immediate duplicates
+          wordQueue.push(w);
+        }
+        processedWordCount = words.length;
+        processNextWord();
+      }
+
+      function scheduleTranslate(input, isInterim){
+        const text = (input || "").trim();
+        if(!text || text === lastTranslateInput) return;
+        lastTranslateInput = text;
+        if(translateTimer) clearTimeout(translateTimer);
+        // Lower debounce for near-live feel
+        const delayMs = isInterim ? 200 : 150;
+        translateTimer = setTimeout(async () => {
+          const requestId = ++lastRequestId;
+          try{
+            // Limit text length to last 300 chars to avoid large duplicate payloads
+            const limited = text.length > 300 ? text.slice(-300) : text;
+            const { text: translated, provider } = await translateToEnglish(limited);
+            // Only apply if this is the latest request to avoid stale overwrites
+            if(requestId === lastRequestId){
+              if(isInterim){
+                englishOut.value = (englishHistoryText + (englishHistoryText ? "\n" : "") + `[interim] ${translated}`).trim();
+              } else {
+                englishHistoryText = (englishHistoryText ? englishHistoryText + "\n" : "") + translated;
+                englishOut.value = englishHistoryText;
+              }
+              log(`Translated via ${provider}`);
+            }
+          }catch(e){
+            englishOut.value = englishHistoryText || "";
+            log("Translate error: "+ e.message);
+          }
+        }, delayMs);
+      }
+
+      recognition.onresult = async (event) => {
+        let interim = "";
+        for(let i = event.resultIndex; i < event.results.length; i++){
+          const result = event.results[i];
+          const transcript = result[0].transcript;
+          if(result.isFinal){
+            lastFinal += transcript + " ";
+          } else {
+            interim += transcript;
+          }
+        }
+        swedishOut.value = (lastFinal + "\n" + (interim ? `[interim] ${interim}` : "")).trim();
+
+        // Tokenize helper
+        const tokenize = (t) => (t.match(/\p{L}+/gu) || []);
+
+        // 1) Commit any new finalized Swedish tokens to English history
+        const finalWords = tokenize(lastFinal);
+        if(finalWords.length > committedFinalWordsCount){
+          const newFinalSv = finalWords.slice(committedFinalWordsCount).join(" ");
+          committedFinalWordsCount = finalWords.length;
+          try{
+            const { text: newFinalEn } = await translateToEnglish(newFinalSv);
+            englishHistoryText = (englishHistoryText ? englishHistoryText + "\n" : "") + newFinalEn;
+            // Reset interim accumulation after committing
+            interimEnglishAccum = "";
+            prevInterimWords = [];
+          }catch(e){ log("Final translate error: "+ e.message); }
+        }
+
+        // 2) Interim: translate only the new complete interim words (delta)
+        if(interim){
+          const interimWords = tokenize(interim);
+          const completeInterimWords = /\p{L}$/u.test(interim) && interimWords.length > 0
+            ? interimWords.slice(0, interimWords.length - 1)
+            : interimWords;
+          if(completeInterimWords.length > prevInterimWords.length){
+            const newTailSv = completeInterimWords.slice(prevInterimWords.length).join(" ");
+            try{
+              const { text: tailEn } = await translateToEnglish(newTailSv);
+              interimEnglishAccum = (interimEnglishAccum ? `${interimEnglishAccum} ` : "") + tailEn;
+            }catch(e){ log("Interim translate error: "+ e.message); }
+          }
+          prevInterimWords = completeInterimWords;
+        } else {
+          prevInterimWords = [];
+          interimEnglishAccum = "";
+        }
+
+        // 3) Render English area: history + at most one interim line
+        englishOut.value = englishHistoryText + (interimEnglishAccum ? (englishHistoryText ? "\n" : "") + `[interim] ${interimEnglishAccum}` : "");
+
+        // 4) Per-word streaming queue from final + current complete interim
+        enqueueNewWordsFrom((lastFinal + " " + (interim || "")).trim(), Boolean(interim));
+      };
+    }
+
+    startBtn.addEventListener("click", () => {
+      if(!supportsWebSpeech()){
+        alert("Web Speech API not supported in this browser. Try Chrome or Safari.");
+        return;
+      }
+      if(!recognition){
+        setupRecognition();
+      }
+      try{ recognition.start(); }catch(_){ /* ignore if already started */ }
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if(isRunning && recognition){
+        recognition.stop();
+      }
+    });
+
+    // Clear button resets transcripts and state
+    clearBtn.addEventListener("click", () => {
+      swedishOut.value = "";
+      englishOut.value = "";
+      wordStreamEl.textContent = "";
+      lastFinal = "";
+      translateTimer = null;
+      lastTranslateInput = "";
+      lastRequestId = 0;
+      englishHistoryText = "";
+      interimEnglishAccum = "";
+      prevInterimWords = [];
+      committedFinalWordsCount = 0;
+      processedWordCount = 0;
+      wordQueue.length = 0;
+      lastStreamedWord = "";
+    });
+  </script>
+</body>
+</html>
