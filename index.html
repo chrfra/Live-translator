@@ -20,6 +20,10 @@
     .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace}
     textarea{width:100%;min-height:120px;background:#0e1430;color:var(--fg);border:1px solid #24305a;border-radius:10px;padding:10px}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .wordgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .wordgrid .head{font-weight:700;color:var(--muted);margin-bottom:6px}
+    .col{background:#0e1430;border:1px solid #24305a;border-radius:8px;padding:8px;min-height:120px}
+    .cell{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace; line-height:1.6}
     .foot{opacity:.7;font-size:12px;margin-top:10px}
     .small{font-size:12px;color:var(--muted)}
     .live{color:var(--ok)}
@@ -52,14 +56,23 @@
 
     <div class="card">
       <h3>Per‑word Translation (live)</h3>
-      <div id="wordStream" class="mono" style="max-height:180px; overflow:auto; white-space:pre-wrap"></div>
-      <div class="small">Each new Swedish word is translated and appended here.</div>
+      <div class="wordgrid">
+        <div>
+          <div class="head">Swedish</div>
+          <div id="wordColSv" class="col"></div>
+        </div>
+        <div>
+          <div class="head">English</div>
+          <div id="wordColEn" class="col"></div>
+        </div>
+      </div>
+      <div class="small">Words are aligned by row. Only whole words are streamed.</div>
     </div>
 
-    <div class="card">
-      <h3>Debug</h3>
+    <details class="card" id="debugWrap">
+      <summary>Debug</summary>
       <pre id="debug" class="mono" style="white-space:pre-wrap"></pre>
-    </div>
+    </details>
 
     <div class="foot">If your browser lacks the Web Speech API, use Chrome on macOS/Windows. Safari 16+ also supports it.</div>
   </div>
@@ -70,7 +83,8 @@
     const swedishOut = document.getElementById("swedishOut");
     const englishOut = document.getElementById("englishOut");
     const clearBtn = document.getElementById("clearBtn");
-    const wordStreamEl = document.getElementById("wordStream");
+    const wordColSv = document.getElementById("wordColSv");
+    const wordColEn = document.getElementById("wordColEn");
     const debugEl = document.getElementById("debug");
 
     let recognition;
@@ -212,8 +226,8 @@
       let lastTranslateInput = "";
 
       let lastRequestId = 0;
-      let englishHistoryText = "";           // committed English from final results
-      let interimEnglishAccum = "";          // incremental English for interim deltas only
+      let englishHistoryText = "";           // committed English from final results (lines)
+      let interimEnglishTokens = [];          // one English token per interim Swedish word
       let prevInterimWords = [];              // previously translated interim Swedish tokens
       let committedFinalWordsCount = 0;       // how many Swedish tokens are finalized
       let processedWordCount = 0;             // for per-word streaming
@@ -222,14 +236,20 @@
       let lastStreamedWord = "";
 
       function appendWordLine(svWord, enWord){
-        const line = document.createElement("div");
-        line.textContent = `${svWord} → ${enWord}`;
-        wordStreamEl.appendChild(line);
+        const svCell = document.createElement("div");
+        svCell.className = "cell";
+        svCell.textContent = svWord;
+        const enCell = document.createElement("div");
+        enCell.className = "cell";
+        enCell.textContent = enWord;
+        wordColSv.appendChild(svCell);
+        wordColEn.appendChild(enCell);
         lastStreamedWord = svWord;
-        while(wordStreamEl.childNodes.length > 200){
-          wordStreamEl.removeChild(wordStreamEl.firstChild);
-        }
-        wordStreamEl.scrollTop = wordStreamEl.scrollHeight;
+        // cap rows
+        while(wordColSv.childNodes.length > 300){ wordColSv.removeChild(wordColSv.firstChild); }
+        while(wordColEn.childNodes.length > 300){ wordColEn.removeChild(wordColEn.firstChild); }
+        wordColSv.scrollTop = wordColSv.scrollHeight;
+        wordColEn.scrollTop = wordColEn.scrollHeight;
       }
 
       async function processNextWord(){
@@ -324,7 +344,7 @@
             const { text: newFinalEn } = await translateToEnglish(newFinalSv);
             englishHistoryText = (englishHistoryText ? englishHistoryText + "\n" : "") + newFinalEn;
             // Reset interim accumulation after committing
-            interimEnglishAccum = "";
+            interimEnglishTokens = [];
             prevInterimWords = [];
           }catch(e){ log("Final translate error: "+ e.message); }
         }
@@ -339,17 +359,33 @@
             const newTailSv = completeInterimWords.slice(prevInterimWords.length).join(" ");
             try{
               const { text: tailEn } = await translateToEnglish(newTailSv);
-              interimEnglishAccum = (interimEnglishAccum ? `${interimEnglishAccum} ` : "") + tailEn;
+              // Map translated tail into tokens; keep only last N = new words count
+              const newCount = completeInterimWords.length - prevInterimWords.length;
+              const tokens = tailEn.split(/\s+/).filter(Boolean);
+              // Ensure exactly one token per new Swedish word by collapsing repeats
+              const collapsed = [];
+              for(const tok of tokens){
+                if(collapsed.length === 0 || collapsed[collapsed.length-1].toLowerCase() !== tok.toLowerCase()){
+                  collapsed.push(tok);
+                }
+              }
+              while(collapsed.length < newCount){ collapsed.push(collapsed[collapsed.length-1] || ""); }
+              interimEnglishTokens.push(...collapsed.slice(0, newCount));
+              // Limit interim token list to the current complete interim words length
+              if(interimEnglishTokens.length > completeInterimWords.length){
+                interimEnglishTokens = interimEnglishTokens.slice(-completeInterimWords.length);
+              }
             }catch(e){ log("Interim translate error: "+ e.message); }
           }
           prevInterimWords = completeInterimWords;
         } else {
           prevInterimWords = [];
-          interimEnglishAccum = "";
+          interimEnglishTokens = [];
         }
 
-        // 3) Render English area: history + at most one interim line
-        englishOut.value = englishHistoryText + (interimEnglishAccum ? (englishHistoryText ? "\n" : "") + `[interim] ${interimEnglishAccum}` : "");
+        // 3) Render English area: history + at most one interim line (one token per word)
+        const interimLine = interimEnglishTokens.join(" ");
+        englishOut.value = englishHistoryText + (interimLine ? (englishHistoryText ? "\n" : "") + `[interim] ${interimLine}` : "");
 
         // 4) Per-word streaming queue from final + current complete interim
         enqueueNewWordsFrom((lastFinal + " " + (interim || "")).trim(), Boolean(interim));
@@ -377,18 +413,27 @@
     clearBtn.addEventListener("click", () => {
       swedishOut.value = "";
       englishOut.value = "";
-      wordStreamEl.textContent = "";
+      while(wordColSv.firstChild) wordColSv.removeChild(wordColSv.firstChild);
+      while(wordColEn.firstChild) wordColEn.removeChild(wordColEn.firstChild);
       lastFinal = "";
       translateTimer = null;
       lastTranslateInput = "";
       lastRequestId = 0;
       englishHistoryText = "";
-      interimEnglishAccum = "";
+      interimEnglishTokens = [];
       prevInterimWords = [];
       committedFinalWordsCount = 0;
       processedWordCount = 0;
       wordQueue.length = 0;
       lastStreamedWord = "";
+      translationCache.clear();
+      // reset controls/state
+      if(recognition){ try{ recognition.stop(); }catch(_){} }
+      recognition = null;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusEl.textContent = "Idle";
+      statusEl.classList.remove("live");
     });
   </script>
 </body>
