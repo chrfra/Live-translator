@@ -59,4 +59,6 @@ The Space will build using the Dockerfile and expose a public URL.
 
 - index.html
 - translate_server.py
+ - Dockerfile
+ - .huggingface.yml
 
