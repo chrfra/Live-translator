@@ -4,21 +4,30 @@ A minimal local web app that listens to mic, transcribes Swedish, and translates
 
 ## Run
 
-1) Start static server:
-   python3 -m http.server 8080
-
-2) Start local translator (first time downloads sv->en model):
+1) Start the combined server (serves UI and /translate):
    source .venv/bin/activate
-   nohup python translate_server.py >/tmp/argos.log 2>&1 &
+   python translate_server.py
 
-3) Open app:
-   open http://localhost:8080
+2) Open app:
+   open http://localhost:5009
 
 ## Dev
 
 - Frontend tries Local (Argos) → LibreTranslate → MyMemory.
 - Interim translations update frequently; finals append as history.
 - Per‑word panel streams whole-word translations.
+
+## Deploy
+
+Option A: Docker (recommended)
+
+```
+docker build -t live-translator .
+docker run -p 8080:8080 -e PORT=8080 live-translator
+```
+
+Option B: Render, Fly.io, Railway, Heroku
+- Use the Dockerfile or set `PORT` and run `python translate_server.py` as the start command.
 
 ## Project files
 

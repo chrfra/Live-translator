@@ -1,9 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+import os
 import argostranslate.package
 import argostranslate.translate
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__, static_folder=BASE_DIR, static_url_path="")
 CORS(app)
 
 # Ensure Swedish->English model is installed on first run
@@ -30,6 +32,11 @@ def ensure_model():
 def health():
     return {"ok": True}
 
+@app.route("/")
+def index():
+    # Serve the SPA
+    return send_from_directory(BASE_DIR, "index.html")
+
 @app.route("/translate", methods=["POST"]) 
 def translate():
     ensure_model()
@@ -43,4 +50,5 @@ def translate():
     return jsonify({"translatedText": translated})
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5009)
+    port = int(os.environ.get("PORT", "5009"))
+    app.run(host="0.0.0.0", port=port)

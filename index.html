@@ -106,7 +106,8 @@
       }
     }
 
-    const LOCAL_TRANSLATE_URL = "http://127.0.0.1:5009";
+    // Point to same origin by default; works locally and when deployed
+    const LOCAL_TRANSLATE_URL = location.origin;
 
     async function translateViaLocal(text){
       const endpoint = `${LOCAL_TRANSLATE_URL}/translate`;
